@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Jokes On You — Screenshot Gallery</title>
+
+<!-- Google Fonts -->
+<link href="https://fonts.googleapis.com/css2?family=Mansalva&family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --bg: #0f1724;
+    --card: #1a2435;
+    --muted: #9ca3af;
+    --gap: 1rem;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    font-family: Inter, sans-serif;
+    background: linear-gradient(180deg,#0b1220 0%, #071019 100%);
+    color: #f1f5f9;
+  }
+
+  header {
+    padding: 2rem 1rem 1rem;
+    text-align: center;
+  }
+  h1 {
+    font-family: 'Mansalva', cursive;
+    font-size: 3.2rem;
+    margin: 0;
+    color: #fff;
+  }
+
+  .gallery-wrap {
+    padding: 1rem;
+    width: 100%;
+    max-width: 1400px;
+    margin: auto;
+  }
+
+  /* Masonry using CSS columns */
+  .gallery {
+    column-gap: var(--gap);
+    width: 100%;
+    column-fill: balance;
+  }
+  @media (min-width:1400px){ .gallery{column-count:4;} }
+  @media (min-width:1000px) and (max-width:1399px){ .gallery{column-count:3;} }
+  @media (min-width:700px) and (max-width:999px){ .gallery{column-count:2;} }
+  @media (max-width:699px){ .gallery{column-count:1;} }
+
+  .item {
+    display: inline-block;
+    width: 100%;
+    margin: 0 0 var(--gap);
+    break-inside: avoid;
+    background: var(--card);
+    padding: .5rem;
+    border-radius: 12px;
+    box-shadow: 0 6px 18px rgba(0,0,0,.35);
+  }
+  .item img {
+    width: 100%;
+    border-radius: 10px;
+    display: block;
+  }
+  .item p {
+    margin: .4rem 0 0;
+    color: var(--muted);
+    font-size: .9rem;
+    word-break: break-word;
+  }
+
+  .upload-container {
+    display: flex;
+    justify-content: center;
+    margin-top: 2rem;
+    margin-bottom: 3rem;
+  }
+  .upload-box {
+    background: #fff;
+    color: #000;
+    padding: 1rem 1.2rem;
+    width: min(500px, 90%);
+    border-radius: 18px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+    display: flex;
+    flex-direction: column;
+    gap: .75rem;
+  }
+
+  .upload-box input,
+  .upload-box textarea {
+    width: 100%;
+    font-size: 1rem;
+    padding: .6rem;
+    border-radius: 10px;
+    border: 1px solid #ccc;
+  }
+
+  .upload-box button {
+    align-self: flex-end;
+    padding: .6rem 1.2rem;
+    border-radius: 10px;
+    border: none;
+    background: #0f1724;
+    color: #fff;
+    font-weight: bold;
+    cursor: pointer;
+    transition: .2s;
+  }
+  .upload-box button:hover {
+    opacity: .9;
+  }
+
+  /* small screens - tighter title size */
+  @media (max-width:420px){
+    h1{ font-size: 2.3rem; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Jokes On You</h1>
+</header>
+
+<main class="gallery-wrap">
+  <!-- Masonry Gallery -->
+  <div id="gallery" class="gallery" aria-live="polite"></div>
+
+  <!-- Upload Section -->
+  <div class="upload-container">
+    <div class="upload-box" role="region" aria-label="Upload screenshot">
+      <label style="display:none" for="fileInput">Choose image</label>
+      <input id="fileInput" type="file" accept="image/*" aria-label="Choose screenshot to upload">
+      <textarea id="descInput" rows="2" placeholder="Write a caption..." aria-label="Image description"></textarea>
+      <button id="uploadBtn" type="button" aria-label="Upload screenshot">Upload</button>
+    </div>
+  </div>
+</main>
+
+<script>
+/* ========== Configuration ========== */
+/* Set this later to your deployed Google Apps Script Web App URL */
+const BACKEND_URL = "https://script.google.com/macros/s/AKfycbyrFY-gRhkz0fssibYoTzpIAF6y68HT8nAOlQJOnl7L6tv4-bMBuA1XAx4PT7sVDRXRCw/exec"; // e.g. "https://script.google.com/macros/s/XXXXX/exec"
+
+/* Max file size in bytes (default 5 MB). Adjust if you want bigger/smaller uploads. */
+const MAX_FILE_SIZE = 5 * 1024 * 1024;
+
+/* ========== Helpers ========== */
+
+/* Create gallery item safely (no innerHTML with user strings) */
+function createGalleryItem(imageSrc, description, filename) {
+  const item = document.createElement('div');
+  item.className = 'item';
+
+  const img = document.createElement('img');
+  img.src = imageSrc;
+  img.alt = description ? description.slice(0, 100) : (filename || 'screenshot');
+  img.loading = 'lazy';
+  item.appendChild(img);
+
+  if (description) {
+    const p = document.createElement('p');
+    p.textContent = description;
+    item.appendChild(p);
+  }
+
+  return item;
+}
+
+/* Add an image at the top of the gallery */
+function addImageToGallery(imageSrc, description, filename) {
+  const gallery = document.getElementById('gallery');
+  const item = createGalleryItem(imageSrc, description, filename);
+  // prepend - newest at top
+  gallery.insertBefore(item, gallery.firstChild);
+}
+
+/* Safe base64 extraction from FileReader result */
+function extractBase64(dataUrl) {
+  if (!dataUrl) return '';
+  const comma = dataUrl.indexOf(',');
+  return comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl;
+}
+
+/* ========== Upload flow ========== */
+
+async function upload() {
+  const fileInput = document.getElementById('fileInput');
+  const descInput = document.getElementById('descInput');
+
+  if (!fileInput.files || !fileInput.files[0]) {
+    alert('Please choose an image file to upload.');
+    return;
+  }
+
+  const file = fileInput.files[0];
+
+  if (file.size > MAX_FILE_SIZE) {
+    alert(`File is too large. Maximum size is ${Math.round(MAX_FILE_SIZE / 1024 / 1024)} MB.`);
+    return;
+  }
+
+  // Read file as Data URL (for preview + base64)
+  const reader = new FileReader();
+
+  reader.onerror = function() {
+    console.error('FileReader failed', reader.error);
+    alert('Failed to read the file.');
+  };
+
+  reader.onload = async function(e) {
+    const dataUrl = e.target.result;
+    const base64 = extractBase64(dataUrl);
+    const description = descInput.value.trim();
+
+    // If BACKEND_URL is configured, POST to backend and expect a public URL response
+    if (BACKEND_URL) {
+      try {
+        // Use application/x-www-form-urlencoded so Apps Script can read easily
+        const body = new URLSearchParams({
+          file: base64,
+          filename: file.name,
+          desc: description
+        });
+
+        const res = await fetch(BACKEND_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+          body
+        });
+
+        if (!res.ok) {
+          console.error('Upload failed', res.status, await res.text());
+          alert('Upload failed. Check console for details.');
+          return;
+        }
+
+        // Backend should return the public URL (plain text or JSON.url)
+        const text = await res.text();
+        // if backend returns JSON, try to parse
+        let imageUrl = text;
+        try {
+          const json = JSON.parse(text);
+          imageUrl = json.url || json.imageUrl || json.link || text;
+        } catch(_) { /* not JSON */ }
+
+        addImageToGallery(imageUrl, description, file.name);
+      } catch (err) {
+        console.error('Upload error', err);
+        alert('Upload failed (network). Check console.');
+      }
+    } else {
+      // No backend configured — show a preview using the data URL
+      addImageToGallery(dataUrl, description, file.name);
+    }
+
+    // reset inputs
+    fileInput.value = '';
+    descInput.value = '';
+  };
+
+  reader.readAsDataURL(file);
+}
+
+/* ========== Load existing images on startup (placeholder) ========== */
+async function loadImages() {
+  // If you implement a GET endpoint on your Apps Script, fetch it and return
+  // an array like: [{ url: 'https://...', desc:'...', filename:'...'}, ...]
+  if (!BACKEND_URL) return;
+
+  try {
+    const res = await fetch(BACKEND_URL + "?action=list"); // change to how you implement it
+    if (!res.ok) {
+      console.warn('Could not fetch existing images:', res.status);
+      return;
+    }
+    const payload = await res.json(); // expected array
+    if (!Array.isArray(payload)) return;
+
+    // Add in reverse so newest show first (optional)
+    payload.reverse().forEach(file => {
+      if (file.url) addImageToGallery(file.url, file.desc || '', file.filename || '');
+    });
+  } catch (err) {
+    console.error('Error loading images:', err);
+  }
+}
+
+/* ========== Wiring ========== */
+document.addEventListener('DOMContentLoaded', function() {
+  document.getElementById('uploadBtn').addEventListener('click', upload);
+  loadImages();
+});
+</script>
+
+</body>
+</html>
